@@ -40,7 +40,7 @@ mod wall;
 use takt_core::Timestamp;
 
 pub use anchor::{Anchor, AnchorCell, ManualMonotonic, MonotonicSource, SystemMonotonic};
-pub use audio_master::AudioMasterClock;
+pub use audio_master::{AudioClockWriter, AudioMasterClock};
 pub use timeline::TimelineClock;
 pub use wall::WallClock;
 
