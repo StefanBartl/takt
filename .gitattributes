@@ -1,0 +1,7 @@
+# Cross-Platform-Repo: im Repository immer LF, im Arbeitsbaum plattformnativ.
+# Verhindert, dass CRLF-Dateien aus Windows die rustfmt-Pruefung unter Linux brechen.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.mp4 binary
