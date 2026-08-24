@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[package]
+name = "takt-backend"
+version = "0.0.1"
+description = "VideoBackend-Abstraktion und Praesentations-Scheduler fuer Takt"
+license = "GPL-3.0-or-later"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+takt-core.workspace = true
+takt-clock.workspace = true
+
+[lints]
+workspace = true

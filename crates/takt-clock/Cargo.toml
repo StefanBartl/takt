@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0 OR MIT
+[package]
+name = "takt-clock"
+version = "0.0.1"
+description = "Zeitmodelle der Takt-Betriebsmodi: Audio-Master, Wall-Clock, Timeline"
+license = "Apache-2.0 OR MIT"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+takt-core.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Lizenz-Pruefung fuer den Abhaengigkeitsbaum.
+#
+# Der Sinn ist nicht, Copyleft zu vermeiden — die Anwendung ist selbst GPLv3.
+# Der Sinn ist, dass keine Lizenz *unbemerkt* hereinkommt: jede Erweiterung
+# dieser Allowlist ist eine bewusste Entscheidung mit Begruendung im Pull
+# Request. Nachtraeglich Lizenzen zu entwirren ist teuer, diese Pruefung ist
+# billig.
+
+[graph]
+all-features = true
+
+[licenses]
+version = 2
+# Zone 1 (permissiver Kern) darf ausschliesslich hieraus schoepfen.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "MIT-0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "CC0-1.0",
+    # Ab hier Copyleft: nur fuer Zone 2 und 3 zulaessig.
+    "MPL-2.0",
+    "LGPL-2.1-or-later",
+    "GPL-3.0-or-later",
+]
+confidence-threshold = 0.93
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Bibliotheken, die niemals in den Prozess der Hauptanwendung gehoeren.
+# Sie sind nicht verboten — aber nur hinter einer Prozessgrenze in Zone 3,
+# wo sie ihre eigene Lizenz tragen und ihr eigener Absturz uns nicht trifft.
+deny = []
+
+[advisories]
+version = 2
+yanked = "warn"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

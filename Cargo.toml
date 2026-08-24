@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[workspace]
+resolver = "3"
+members = [
+    "crates/takt-core",
+    "crates/takt-clock",
+    "crates/takt-backend",
+    "apps/takt-player",
+]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.90"
+authors = ["Stefan Bartl"]
+repository = "https://github.com/StefanBartl/takt"
+
+[workspace.dependencies]
+takt-core = { path = "crates/takt-core", version = "0.0.1" }
+takt-clock = { path = "crates/takt-clock", version = "0.0.1" }
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+# Zeitrechnung mit Gleitkomma ist in diesem Projekt ein Fehler, keine Stilfrage.
+cast_precision_loss = "warn"
+cast_possible_truncation = "warn"
+undocumented_unsafe_blocks = "deny"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+
+# Auch im Debug-Profil brauchen die Medien-Crates Optimierung,
+# sonst ist die Wiedergabe beim Entwickeln unbrauchbar langsam.
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.dev]
+opt-level = 1

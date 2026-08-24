@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[package]
+name = "takt-player"
+version = "0.0.1"
+description = "Takt Player"
+license = "GPL-3.0-or-later"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+takt-core.workspace = true
+takt-clock.workspace = true
+takt-backend = { path = "../../crates/takt-backend", version = "0.0.1" }
+
+[lints]
+workspace = true

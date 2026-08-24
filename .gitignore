@@ -1,0 +1,13 @@
+/target
+**/*.rs.bk
+*.pdb
+
+# Lokale Werkzeuge und Messwerte
+/bench-out
+/traces
+*.log
+
+# Editor
+.vscode/
+.idea/
+*.swp
