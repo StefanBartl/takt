@@ -199,6 +199,7 @@ mod tests {
         src.set(0);
         clock
             .writer()
+            .unwrap()
             .report(u64::try_from(48_000 * ms / 1_000).unwrap(), 0);
         (clock, src)
     }
@@ -320,7 +321,7 @@ mod tests {
             Arc::clone(&src) as Arc<dyn MonotonicSource>,
             20_000_000,
         );
-        let w = clock.writer();
+        let w = clock.writer().unwrap();
         let mut pool = FramePool::new(meta(Timestamp::from_millis(0)), 2);
         let mut s = Scheduler::new();
 

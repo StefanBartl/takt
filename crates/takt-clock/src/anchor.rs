@@ -37,7 +37,7 @@
 //! `AtomicU64` sind — das Seqlock schuetzt nicht den Zugriff, sondern nur die
 //! *Zusammengehoerigkeit* der beiden Werte.
 
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering, fence};
 use std::time::Instant;
 
 /// Quelle einer monotonen Zeit in Nanosekunden.
@@ -149,14 +149,48 @@ impl AnchorCell {
     ///
     /// **Aufrufbar aus dem Audio-Thread.** Alloziert nicht, blockiert nicht,
     /// wartet nicht.
+    ///
+    /// # Nur ein Schreiber
+    ///
+    /// Der Zaehler wird gelesen, erhoeht und geschrieben, ohne dass der
+    /// Vorgang atomar ist. Das ist zulaessig, weil es genau einen Schreiber
+    /// gibt — sichergestellt durch [`AudioMasterClock::writer`], das den
+    /// Schreibgriff nur ein einziges Mal herausgibt.
+    ///
+    /// [`AudioMasterClock::writer`]: crate::AudioMasterClock::writer
     pub fn publish(&self, anchor: Anchor) {
         let start = self.seq.load(Ordering::Relaxed);
-        // Ungerade: Schreibvorgang laeuft.
-        self.seq.store(start.wrapping_add(1), Ordering::Release);
+
+        // Ungerade: Schreibvorgang laeuft. Bewusst `Relaxed` mit
+        // anschliessendem Release-Fence und nicht `Release`:
+        //
+        // Ein Release-*Store* ordnet nur vorangehende Operationen VOR sich.
+        // Er verhindert nicht, dass die beiden nachfolgenden Relaxed-Stores
+        // nach OBEN wandern, also vor den ungeraden Zaehlerstand. Genau das
+        // tut ARM64 tatsaechlich — auf x86 mit seinem starken Speichermodell
+        // faellt der Fehler nicht auf.
+        //
+        // Der Release-Fence ordnet vorangehende Operationen vor alle
+        // nachfolgenden Stores und schliesst diese Luecke.
+        self.seq.store(start.wrapping_add(1), Ordering::Relaxed);
+        fence(Ordering::Release);
+
         self.samples.store(anchor.samples, Ordering::Relaxed);
         self.nanos.store(anchor.nanos, Ordering::Relaxed);
-        // Gerade: wieder konsistent.
-        self.seq.store(start.wrapping_add(2), Ordering::Release);
+
+        // Gerade: wieder konsistent. Hier ist `Release` richtig, weil es die
+        // beiden Datenschreibvorgaege vor diesem Zaehlerstand sichtbar macht.
+        //
+        // Der Zaehler zaehlt in Zweierschritten und wuerde nach 2^31
+        // Veroeffentlichungen auf 0 laufen — dem Wert, der „noch nie
+        // geschrieben" bedeutet. Bei 100 Ankern pro Sekunde waere das nach
+        // etwa 340 Jahren; trotzdem wird 0 uebersprungen, weil ein Zaehler
+        // mit einem Sonderwert diesen Sonderwert nie annehmen darf.
+        let next = match start.wrapping_add(2) {
+            0 => 2,
+            n => n,
+        };
+        self.seq.store(next, Ordering::Release);
     }
 
     /// Liest den Anker konsistent.
@@ -178,7 +212,19 @@ impl AnchorCell {
             }
             let samples = self.samples.load(Ordering::Relaxed);
             let nanos = self.nanos.load(Ordering::Relaxed);
-            let after = self.seq.load(Ordering::Acquire);
+
+            // Acquire-Fence vor dem zweiten Zaehler-Lesevorgang. Ein
+            // Acquire-*Load* ordnet nur nachfolgende Operationen NACH sich; er
+            // verhindert nicht, dass er selbst nach UNTEN wandert, also vor
+            // die beiden Datenlesevorgaenge. Dann wuerde die Pruefung einen
+            // Zaehlerstand vergleichen, der aelter ist als die gelesenen
+            // Daten — die Pruefung liefe ins Leere.
+            //
+            // Der Fence ordnet die beiden Datenlesevorgaenge vor alles, was
+            // danach kommt, und macht den Vergleich damit aussagekraeftig.
+            fence(Ordering::Acquire);
+
+            let after = self.seq.load(Ordering::Relaxed);
             if before == after {
                 return Some(Anchor { samples, nanos });
             }

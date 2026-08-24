@@ -49,7 +49,7 @@ fn main() {
         Arc::clone(&source) as Arc<dyn MonotonicSource>,
         20_000_000,
     );
-    let writer = clock.writer();
+    let writer = clock.writer().expect("Schreibgriff ist noch frei");
 
     let mut backend = NullBackend::new(meta, fps, duration, Pattern::Motion, 6);
     let info = match backend.open("null://motion") {

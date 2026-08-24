@@ -32,6 +32,9 @@ pub struct AudioMasterClock {
     sample_rate: u32,
     paused: AtomicBool,
     max_extrapolation_nanos: u64,
+    /// Ob der Schreibgriff schon herausgegeben wurde. Siehe
+    /// [`AudioMasterClock::writer`].
+    writer_taken: AtomicBool,
 }
 
 impl AudioMasterClock {
@@ -51,6 +54,7 @@ impl AudioMasterClock {
             sample_rate,
             paused: AtomicBool::new(false),
             max_extrapolation_nanos,
+            writer_taken: AtomicBool::new(false),
         }
     }
 
@@ -59,11 +63,20 @@ impl AudioMasterClock {
     /// Absichtlich ein eigener Typ: der Audio-Thread soll die Uhr nicht lesen
     /// koennen, nur stellen. Das macht die Datenflussrichtung im Typsystem
     /// sichtbar.
+    ///
+    /// Gibt beim zweiten Aufruf `None` zurueck. Das Seqlock im Anker vertraegt
+    /// **genau einen** Schreiber — es erhoeht seinen Zaehler nicht atomar,
+    /// weil ein zweiter Schreiber ohnehin ein Entwurfsfehler waere. Anstatt
+    /// das nur zu dokumentieren, gibt die Uhr den Schreibgriff einmalig
+    /// heraus; [`AudioClockWriter`] ist entsprechend nicht `Clone`.
     #[must_use]
-    pub fn writer(&self) -> AudioClockWriter {
-        AudioClockWriter {
-            anchor: Arc::clone(&self.anchor),
+    pub fn writer(&self) -> Option<AudioClockWriter> {
+        if self.writer_taken.swap(true, Ordering::AcqRel) {
+            return None;
         }
+        Some(AudioClockWriter {
+            anchor: Arc::clone(&self.anchor),
+        })
     }
 
     /// Haelt die Uhr an. Die Position bleibt stehen.
@@ -160,7 +173,10 @@ impl Clock for AudioMasterClock {
 /// [`AudioClockWriter::report`] alloziert nicht, nimmt kein Lock, blockiert
 /// nicht und kann nicht in Panik geraten. Damit ist der Aufruf aus einem
 /// Audio-Callback erlaubt.
-#[derive(Debug, Clone)]
+///
+/// Bewusst **nicht** `Clone`: das Seqlock im Anker vertraegt genau einen
+/// Schreiber.
+#[derive(Debug)]
 pub struct AudioClockWriter {
     anchor: Arc<AnchorCell>,
 }
@@ -194,6 +210,18 @@ mod tests {
     }
 
     #[test]
+    fn schreibgriff_wird_nur_einmal_herausgegeben() {
+        // Das Seqlock im Anker vertraegt genau einen Schreiber. Diese
+        // Invariante steht im Typsystem, nicht nur in der Dokumentation.
+        let (clock, _src) = setup(48_000);
+        assert!(clock.writer().is_some());
+        assert!(
+            clock.writer().is_none(),
+            "ein zweiter Schreibgriff wuerde das Seqlock brechen"
+        );
+    }
+
+    #[test]
     fn steht_bei_null_ohne_anker() {
         let (clock, _src) = setup(48_000);
         assert_eq!(clock.now().ticks(), 0);
@@ -204,7 +232,7 @@ mod tests {
     #[test]
     fn folgt_der_sampleposition_exakt() {
         let (clock, src) = setup(48_000);
-        let w = clock.writer();
+        let w = clock.writer().unwrap();
 
         src.set(10_000_000); // 10 ms
         w.report(480, 10_000_000); // 480 Samples = 10 ms bei 48 kHz
@@ -217,7 +245,7 @@ mod tests {
     #[test]
     fn interpoliert_zwischen_callbacks() {
         let (clock, src) = setup(48_000);
-        let w = clock.writer();
+        let w = clock.writer().unwrap();
 
         src.set(0);
         w.report(0, 0);
@@ -235,7 +263,7 @@ mod tests {
     #[test]
     fn extrapolation_ist_begrenzt() {
         let (clock, src) = setup(48_000);
-        let w = clock.writer();
+        let w = clock.writer().unwrap();
 
         src.set(0);
         w.report(0, 0);
@@ -251,7 +279,7 @@ mod tests {
     #[test]
     fn pause_haelt_die_position() {
         let (clock, src) = setup(48_000);
-        let w = clock.writer();
+        let w = clock.writer().unwrap();
 
         src.set(0);
         w.report(4_800, 0);
@@ -267,7 +295,7 @@ mod tests {
     #[test]
     fn until_nanos_wird_negativ_bei_verzug() {
         let (clock, src) = setup(48_000);
-        let w = clock.writer();
+        let w = clock.writer().unwrap();
 
         src.set(0);
         w.report(48_000, 0); // Position: 1 s
@@ -286,7 +314,7 @@ mod tests {
     #[test]
     fn is_due_bei_halber_framedauer() {
         let (clock, src) = setup(48_000);
-        let w = clock.writer();
+        let w = clock.writer().unwrap();
         src.set(0);
         w.report(48_000, 0); // 1 s
 
@@ -300,7 +328,7 @@ mod tests {
     fn funktioniert_auch_bei_44100() {
         // 44,1 kHz ist die Rate, bei der Sekundenrechnung immer rundet.
         let (clock, src) = setup(44_100);
-        let w = clock.writer();
+        let w = clock.writer().unwrap();
         src.set(0);
         w.report(44_100 * 3_600, 0); // exakt eine Stunde
 

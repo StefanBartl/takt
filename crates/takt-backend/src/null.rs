@@ -290,7 +290,7 @@ mod tests {
             Arc::clone(&src) as Arc<dyn MonotonicSource>,
             20_000_000,
         );
-        let w = clock.writer();
+        let w = clock.writer().unwrap();
         src.set(0);
         w.report(0, 0);
 
@@ -316,7 +316,7 @@ mod tests {
             Arc::clone(&src) as Arc<dyn MonotonicSource>,
             20_000_000,
         );
-        let w = clock.writer();
+        let w = clock.writer().unwrap();
         let mut b = backend(Pattern::Flat);
         b.open("test").unwrap();
 
@@ -378,7 +378,7 @@ mod tests {
             Arc::clone(&src) as Arc<dyn MonotonicSource>,
             20_000_000,
         );
-        let w = clock.writer();
+        let w = clock.writer().unwrap();
         src.set(0);
 
         let mut b = NullBackend::new(
@@ -413,7 +413,7 @@ mod tests {
             Arc::clone(&src) as Arc<dyn MonotonicSource>,
             20_000_000,
         );
-        clock.writer().report(0, 0);
+        clock.writer().unwrap().report(0, 0);
 
         for pattern in [Pattern::Flat, Pattern::Bars, Pattern::Motion] {
             let mut b = backend(pattern);
