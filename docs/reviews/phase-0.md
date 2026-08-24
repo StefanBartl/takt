@@ -45,6 +45,24 @@ Die Audio-Master-Uhr interpoliert zwischen Callbacks mit der Systemuhr. Nahelieg
 
 Der Nebenläufigkeitstest `nebenlaeufig_niemals_zerrissen` prüft über 200.000 Schreibvorgänge, dass die Invariante `nanos == samples * 1000` bei keinem Lesevorgang bricht. Ein `Mutex` hätte dieselbe Korrektheit geliefert, aber die Realtime-Invariante verletzt.
 
+**Der Test hat trotzdem gelogen — auf x86.** Der erste Push bestand lokal (Windows/x86-64) alle 63 Tests, brach aber auf `macos-latest` (Apple Silicon, ARM64) mit genau diesem Test. Ursache: `publish()` benutzte einen `Release`-Store auf den Zähler, gefolgt von zwei `Relaxed`-Stores auf die Nutzdaten; `load()` einen `Acquire`-Load auf den Zähler, umschlossen von zwei `Relaxed`-Loads.
+
+Das Problem: **`Release`/`Acquire` auf einer einzelnen Operation ordnet nur in eine Richtung.** Ein Release-Store garantiert, dass alles *davor* sichtbar wird, bevor er selbst sichtbar wird — er verhindert nicht, dass *nachfolgende* Relaxed-Stores vor ihn hochwandern. Symmetrisch beim Acquire-Load. x86 hat ein so starkes Speichermodell (TSO), dass diese Umordnung dort praktisch nie auftritt; ARM64 ordnet aggressiver um, und der Test riss den Lesevorgang tatsächlich auf (`assertion left == right failed: zerrissener Lesevorgang trotz Seqlock`, `left: 1282, right: 0`).
+
+Behoben mit expliziten `fence(Ordering::Release)` bzw. `fence(Ordering::Acquire)` an der jeweils kritischen Stelle — ein Fence erzwingt die volle Ordnungsgarantie, statt sie stillschweigend von einer einzelnen Operation zu erwarten. Siehe [`crates/takt-clock/src/anchor.rs`](../../crates/takt-clock/src/anchor.rs).
+
+**Das ist der Beleg für „Cross-Platform ab Commit eins" aus diesem Dokument, nicht nur eine Behauptung.** Ohne die ARM64-Maschine in der CI-Matrix wäre dieser Fehler unentdeckt geblieben, bis er live auf einem Apple-Silicon-Rechner als sporadisches Ruckeln aufgetaucht wäre — dem am schwersten diagnostizierbaren Fehlerbild überhaupt, weil es nicht reproduzierbar aussieht.
+
+**Zweite Korrektur im selben Zug:** `AudioMasterClock::writer()` gab den Schreibgriff bisher beliebig oft heraus; nur ein Kommentar behauptete „genau ein Schreiber". Das Seqlock erhöht seinen Zähler nicht atomar und verträgt tatsächlich nur einen Schreiber — ein zweiter hätte ihn brechen können, ohne dass ein Test das gezeigt hätte. `writer()` liefert jetzt `Option<AudioClockWriter>` und gibt beim zweiten Aufruf `None` zurück; `AudioClockWriter` ist nicht mehr `Clone`. Eine Invariante, die vorher nur im Kommentar stand, erzwingt jetzt der Typ.
+
+### API-Konsistenz — von rustdoc gefunden, nicht von einem Reviewer
+
+Derselbe Push deckte einen zweiten, unabhängigen Fehler auf: `AudioClockWriter` wurde von der öffentlichen Methode `AudioMasterClock::writer()` zurückgegeben, war aber nie in `takt-clock/src/lib.rs` re-exportiert. Der Typ war damit von außerhalb des Crates technisch nicht benennbar, obwohl er Teil der öffentlichen Schnittstelle ist — eine Lücke, die niemandem auffällt, bis jemand versucht, den Rückgabewert in einer eigenen Funktionssignatur zu benennen.
+
+`cargo doc` mit `RUSTDOCFLAGS="-D warnings"` (in der CI als eigener Prüfschritt „Doku baut ohne fehlende Verweise" hinterlegt) verweigerte den Build: `public documentation for 'writer' links to private item 'AudioClockWriter'`. Der Intra-Doc-Link `[`AudioClockWriter`]` im Doc-Kommentar von `writer()` war korrekt; rustdoc bewertete das Ziel zu Recht als nicht öffentlich erreichbar.
+
+**Festgelegt:** `cargo doc --no-deps` mit `-D warnings` bleibt ein Pflichtschritt der CI, nicht nur eine Empfehlung. Es ist die billigste automatisierte Prüfung dafür, dass die öffentliche API in sich konsistent ist — deutlich billiger als der Moment, in dem ein externer Nutzer versucht, einen Typ zu benennen, den er nur indirekt aus einer Signatur kennt.
+
 ### Was noch nicht gemessen ist
 
 * CPU-Last und Speicherbandbreite unter echter Last — es gibt noch keine echte Dekodierung.
@@ -105,6 +123,8 @@ Für Phase 0 ist das nur eine Notiz. Aber die `VideoBackend`-Schnittstelle ist b
 | Frame-Pool mit Rückgabepflicht ab Commit eins | Hardware-Decoder ab Phase 1 | nein |
 | Genau ein hart-echtzeitfähiger Thread | Audio-Deadline ist hart, Video-Deadline weich | nein |
 | Seqlock für den Anker, kein Mutex | Audio-Thread darf nicht blockieren | ja, aber sinnlos |
+| Ordnung über explizite Fences statt Release/Acquire auf Einzeloperationen | ARM64 zerriss sonst den Lesevorgang | nein, ohne Fence nicht plattformkorrekt |
+| Schreibgriff einmalig ausgeben (`Option`, kein `Clone`) | Seqlock verträgt nur einen Schreiber | nein |
 | Cross-Platform ab Commit eins, CI auf drei Zielen | Linux-Unterstützung als Alleinstellungsmerkmal | nein |
 | `NullBackend` als dauerhaftes Werkzeug | Cross-Platform ohne Systemabhängigkeiten, Fehlerzuordnung | – |
 | `forbid(unsafe_code)` in Zone 1 | jetzt billig, später unbequem | wäre ein Rückschritt |

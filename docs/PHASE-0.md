@@ -19,7 +19,9 @@ Phase 0 soll zwei Fragen beantworten: **Steht die Grundstruktur?** und **Macht d
 
 ## Was steht
 
-63 Tests, alle grün, auf Windows gebaut. Clippy und `rustfmt` ohne Beanstandung.
+64 Tests, alle grün, CI grün auf Windows, Linux und macOS (Apple Silicon).
+
+Der erste Push bestand nur lokal auf x86: die CI-Matrix fand auf ARM64 einen echten Nebenläufigkeitsfehler im Seqlock (fehlende Speicherordnung zwischen den beiden Datenfeldern und dem Zähler) sowie eine API-Lücke, die `cargo doc -D warnings` aufdeckte (`AudioClockWriter` von einer öffentlichen Methode zurückgegeben, aber nie re-exportiert). Beides behoben — siehe [reviews/phase-0.md](reviews/phase-0.md#seqlock-statt-mutex--gemessen-nicht-vermutet) für die technische Analyse. Genau das Szenario, für das die Drei-Plattform-Matrix ab Commit eins gedacht war.
 
 | Crate | Zone / Lizenz | Inhalt |
 |---|---|---|

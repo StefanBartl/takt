@@ -151,6 +151,8 @@ Die Antwort ist ein **Seqlock**:
 
 Der ungerade Zustand hält nur zwei Speicherzugriffe lang, ein Wiederholversuch ist entsprechend selten und immer kurz. Der Aufbau kommt ohne `unsafe` aus, weil beide Nutzdaten selbst Atomics sind — das Seqlock schützt nicht den *Zugriff*, sondern nur die *Zusammengehörigkeit*. Implementierung und Nebenläufigkeitstest: [`crates/takt-clock/src/anchor.rs`](../crates/takt-clock/src/anchor.rs).
 
+**Eine Falle darin, die ARM64 in der CI tatsächlich auslöste:** `Release` auf dem Zähler-Store und `Acquire` auf dem Zähler-Load reichen nicht aus. Eine einzelne `Release`-Operation garantiert nur, dass alles *davor* sichtbar wird, bevor sie selbst sichtbar wird — sie verhindert nicht, dass *nachfolgende* `Relaxed`-Stores vor sie hochwandern. Symmetrisch beim `Acquire`-Load. x86 ordnet durch sein starkes Speichermodell (TSO) ohnehin kaum um, weshalb der Fehler dort unsichtbar blieb; auf Apple Silicon (ARM64) riss der Lesevorgang tatsächlich. Behoben mit einem expliziten `fence(Release)` zwischen dem ungeraden Zählerstand und den beiden Datenschreibvorgängen, und einem `fence(Acquire)` zwischen den beiden Datenlesevorgängen und dem zweiten Zählercheck — ein Fence erzwingt die volle Ordnung, statt sie stillschweigend von einer Einzeloperation zu erhoffen.
+
 **Die Extrapolation ist begrenzt.** Bleibt der Anker länger aus als etwa zwei Callback-Perioden, wird nicht weiter interpoliert. Ein alter Anker bedeutet, dass der Audio-Thread ins Stocken geraten ist; eine weiter extrapolierte Position wäre eine Behauptung ohne Grundlage. Stattdessen bleibt die Uhr stehen, und `anchor_age_nanos()` macht das Problem in der Diagnoseanzeige sichtbar.
 
 ---
